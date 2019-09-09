@@ -221,3 +221,243 @@ db.articles.find();
 ```
 db.articles.find().pretty();
 ```
+## 4. Node.js 使用 Mongoose 连接 MongoDB 数据库
+
+### 1. 使用nodejs 链接mongoDB
+使用Mongoose 进行连接<br/>
+npm install --save mongoose <br/>
+
+链接数据库<br/>
+mongo  --进入数据库<br/>
+show dbs 查看数据库<br/>
+
+app.js
+```javascript
+const express = require('express');
+const path = require('path');
+const mongoose = require('mongoose');
+
+mongoose.connect("mongodb://localhost/nodejs-blog");
+let db = mongoose.connection;
+
+db.once('open', function() {
+  console.log('Connected to Mongodb');
+})
+
+db.on('error', function(err) {
+  console.log(err);
+});
+
+const app = express();
+
+let Article = require('./models/article');
+
+app.set('views', path.join(__dirname, 'views'));
+app.set('view engine', 'pug');
+
+app.get('/', function(req, res) {
+  //从数据库中读取数据
+  Article.find({}, function(err, articles) {
+    res.render('index', {
+      articles: articles
+    });
+  });
+})
+
+app.get('/articles/new', function(req, res) {
+  res.render('new', {
+    title: 'Add Article'
+  });
+})
+
+app.listen(5000, function() {
+  console.log("Server started on port 5000...");
+})
+```
+models/article.js 
+
+mongoose.Schema 在代码中规定数据格式，规定表结构
+let Article = module.exports = mongoose.model('Article', articleSchema);  -- 取出表结构
+```javascript
+let mongoose = require('mongoose');
+
+let articleSchema = mongoose.Schema({
+  title: {
+    type: String,
+    required: true
+  },
+  author: {
+    type: String,
+    required: true
+  },
+  body: {
+    type: String,
+    required: true
+  }
+});
+
+let Article = module.exports = mongoose.model('Article', articleSchema);
+```
+
+注：在mongoDB中创建表的名字为 articles
+但在使用时候使用的是Article 会自动变为小写，并加s
+
+## 5. 保存文章到 MongoDB
+
+
+### 1.编写new 页面
+表单提交地址： action="/articles/create"
+```
+extends layout
+
+block content
+  h1 #{title}
+  form(method="post", action="/articles/create")
+    .form-group
+      label Title:
+      input.form-control(name="title", type="text")
+    .form-group
+      label Author:
+      input.form-control(name="author", type="text")
+    .form-group
+      label Body:
+      textarea.form-control(name="body")
+    br
+    input.btn.btn-primary(type="submit", value="Submit")
+```
+
+### 2.处理表单提交路由 - 添加一条数据
+这样无法读取提交内容，返回undefined
+需要安装解析库<br/>
+npm install body-parser
+
+添加表单提交解析组件
+
+```javascript
+const bodyParser = require('body-parser');
+const app = express();
+app.use(bodyParser.urlencoded({
+  extended: false
+}));
+```
+
+```javascript
+app.post('/articles/create', function(req, res) {
+  //读取提交内容
+  // 用model新建对象
+  let article = new Article(req.body);
+
+  article.save(function(err) {
+    if (err) {
+      console.log(err);
+      return;
+    } else {
+      // 提交完成跳转首页
+      res.redirect('/')
+    }
+  })
+})
+```
+
+## 6. 显示文章的内容
+### 1.给文章跳转添加路由
+```
+//- 继承文件layout
+extends ../layout
+
+block content
+  h1 Articles
+  ul.list-group
+    each article, i in articles
+      li.list-group-item
+        a(href='/articles/' + article._id) #{article.title}
+```
+
+### 2.处理路由
+```javascript
+app.get('/articles/:id', function(req, res) {
+  Article.findById(req.params.id, function(err, article) {
+    res.render('show', {
+      article: article
+    })
+  })
+})
+```
+
+## 7. 修改文章的内容 
+### 1. 添加编辑按钮
+show.pug
+```
+extends ../layout
+
+block content
+  h1= article.title
+  h5 Written by #{author}
+  p= article.body
+  hr
+  if user
+    if user.id == article.author
+      a.btn.btn-primary.mr-2(href="/articles/" + article.id + "/edit") Edit
+      a.btn.btn-danger.delete-article(href="#", data-id=article._id) Delete
+```
+
+### 2. 添加编辑界面
+edit.pug
+```
+extends ../layout
+
+block content
+  h1 #{title}
+  form(method="post", action="/articles/update/" + article._id)
+    .form-group
+      label Title:
+      input.form-control(name="title", type="text", value=article.title)
+    .form-group
+      label Author:
+      input.form-control(name="author", type="text", value=article.author)
+    .form-group
+      label Body:
+      textarea.form-control(name="body")= article.body
+    input.btn.btn-primary(type="submit", value="Submit")
+```
+
+### 3.编辑后更新文章
+```javascript
+app.post('/articles/update/:id', function(req, res) {
+  let query = { _id: req.params.id }
+
+  Article.update(query, req.body, function(err) {
+    if (err) {
+      console.log(err);
+      return;
+    } else {
+      res.redirect('/')
+    }
+  })
+})
+```
+
+## 8.删除文章
+```javascript
+router.delete('article/:id', function (req, res) {
+  if (!req.user._id) {
+    return res.status(500).send();
+  }
+  let query = {
+    _id: req.params.id
+  };
+
+  Article.findById(req.params.id, function (err, article) {
+    if (article.author != req.user._id) {
+      res.status(500).send();
+    } else {
+      Article.remove(query, function (err) {
+        if (err) {
+          console.log(err);
+        }
+
+        res.send('Success');
+      })
+    }
+  })
+```
